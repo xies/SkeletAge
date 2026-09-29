@@ -302,9 +302,10 @@ gene_prediction = function(train_data_genes,
 
 ```{r}
 
-skeletage_metadata = read.csv("/Users/ali/Desktop/NYU/SkeletAge/Metadata_Complete.csv")
+skeletage_metadata = read.csv("/Users/xies/Code/SkeletAge/skeletome/Metadata_Complete.csv")
 
-skeletage_counts = read.csv("/Users/ali/Desktop/NYU/SkeletAge/Complete_Raw_Counts.csv")
+skeletage_counts = read.csv("/Users/xies/Code/SkeletAge/skeletome/raw_counts.csv")
+# Append CY's data here
 
 row.names(skeletage_counts) = skeletage_counts$X
 
@@ -387,8 +388,9 @@ metadata_complete = metadata_complete[,-1]
 metadata_complete$Decade = as.factor(metadata_complete$Decade)
 metadata_complete$Decade = relevel(metadata_complete$Decade, ref = "3")
 
+metadata_complete_filt = metadata_complete[intersect(colnames(skeletage_counts),row.names(metadata_complete)),]
 
-raw_counts_complete = skeletage_counts[,row.names(metadata_complete)]
+raw_counts_complete = skeletage_counts[,row.names(metadata_complete_filt)]
 
 ```
 
@@ -405,7 +407,7 @@ register(MulticoreParam(6))
 
 library(DESeq2)
 
-cds = DESeqDataSetFromMatrix(countData = raw_counts_complete, colData = metadata_complete, 
+cds = DESeqDataSetFromMatrix(countData = raw_counts_complete, colData = metadata_complete_filt, 
                               design = ~ Decade) 
 
 cds = DESeq(cds, parallel = TRUE) 
@@ -448,7 +450,7 @@ normalized_counts = counts(cds, normalized = T)
 register(MulticoreParam(6))
 
 
-test_metadata = skeletage_metadata[skeletage_metadata$Sample != row.names(metadata_complete),]
+test_metadata = skeletage_metadata[skeletage_metadata$Sample != row.names(metadata_complete_filt),]
 
 
 #test_metadata = dedup_rowname(test_metadata)
@@ -477,11 +479,11 @@ exp_results_test = results(test_cds)
 
 counts_test = counts(test_cds, normalized = T)
 
-#counts_test = as.data.frame(counts_test[which(row.names(counts_test) %in% colnames(model_data)),])
+# counts_test = as.data.frame(counts_test[which(row.names(counts_test) %in% colnames(model_data)),])
 
 counts_test_data_for_model = t(counts_test)
 
-model_testing_ages = as.double(test_metadata$Age)
+model_testing_ages = as.double(test_metadata[intersect( colnames(counts_test), row.names(test_metadata)),]$Age)
 
 ```
 
@@ -492,7 +494,7 @@ model_testing_ages = as.double(test_metadata$Age)
 ```{r}
 
 best_model = gene_prediction(train_data_genes = normalized_counts,
-                             train_data_ages = metadata_complete$Age,
+                             train_data_ages = metadata_complete_filt$Age,
                              test_data_genes = counts_test,
                              test_data_ages = test_metadata$Age)
 
@@ -511,13 +513,13 @@ model_data = (t(normalized_counts))
 
 train_data_genes = model_data
 
-train_data_ages = as.double(metadata_complete$Age)
+train_data_ages = as.double(metadata_complete_filt$Age)
 
 #-------------------------------------------------------------------------------
 
 #model_path = paste0("/Users/ali/Desktop/NYU/SkeletAge/elastic_net_model_alpha_",best_model$Alpha[1],".rds")
 
-model_path = paste0("/Users/ali/Desktop/NYU/SkeletAge/elastic_net_model_alpha_0.1.rds")
+model_path = paste0("/Users/xies/Desktop/Code/SkeletAge/model/elastic_net_model_alpha_0.1.rds")
 
 alpha0.fit = readRDS(model_path)
   
@@ -529,12 +531,12 @@ alpha0.fit = readRDS(model_path)
 #-------------------------------------------------------------------------------
 
 train_predict = predict(alpha0.fit, s=alpha0.fit$lambda.1se, newx=train_data_genes)
-
+plot(train_data_ages,train_predict)
 print(paste("The MAE is:", mean(abs(train_data_ages - train_predict))))
 
 predicting_itself = as.data.frame(train_predict)
 
-predicting_itself = data.frame(Predicted_Age = predicting_itself$s1, 
+predicting_itself = data.frame(Predicted_Age = predicting_itself$s, 
                               Real_Age = train_data_ages,
                               row.names = row.names(predicting_itself))
 
@@ -587,7 +589,7 @@ print(paste("The MAE is:", mean(abs(model_testing_ages - alpha0.predicted))))
 
 predicted_ages_0 = as.data.frame(alpha0.predicted)
 
-predicted_ages_0 = data.frame(Predicted_Age = predicted_ages_0$s1, 
+predicted_ages_0 = data.frame(Predicted_Age = predicted_ages_0$s, 
                               Real_Age = model_testing_ages,
                               row.names = row.names(predicted_ages_0))
 
@@ -617,6 +619,8 @@ print(paste("The adjusted R² value is:", adjusted_r_squared))
 # Calculate Median Absolute Error (MedAE)
 medae <- median(abs(predicted_ages_0$Real_Age - predicted_ages_0$Predicted_Age))
 print(paste("The Median Absolute Error (MedAE) is:", medae))
+
+
 
 
 ```
